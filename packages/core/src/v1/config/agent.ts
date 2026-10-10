@@ -1,7 +1,7 @@
 export * as ConfigAgentV1 from "./agent"
 
 import { Schema, SchemaGetter } from "effect"
-import { PositiveInt } from "../../schema"
+import { NonNegativeInt, PositiveInt } from "../../schema"
 import { ConfigPermissionV1 } from "./permission"
 
 const Color = Schema.Union([
@@ -34,6 +34,10 @@ const AgentSchema = Schema.StructWithRest(
     steps: Schema.optional(PositiveInt).annotate({
       description: "Maximum number of agentic iterations before forcing text-only response",
     }),
+    depth: Schema.optional(NonNegativeInt).annotate({
+      description:
+        "Maximum session tree depth at which this agent may spawn subagents. Overrides the global subagent_depth for this agent. 0 prevents this agent from spawning subagents.",
+    }),
     maxSteps: Schema.optional(PositiveInt).annotate({ description: "@deprecated Use 'steps' field instead." }),
     permission: Schema.optional(ConfigPermissionV1.Info),
   }),
@@ -52,6 +56,7 @@ const KNOWN_KEYS = new Set([
   "hidden",
   "color",
   "steps",
+  "depth",
   "maxSteps",
   "options",
   "permission",

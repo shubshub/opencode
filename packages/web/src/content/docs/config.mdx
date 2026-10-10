@@ -558,6 +558,59 @@ You can control how deeply subagents can invoke other subagents using the `subag
 
 The default is `1`, which allows primary agents to launch subagents but prevents those subagents from launching additional subagents. Set it to `2` to allow one additional level of nested subagents, or `0` to prevent all subagent launches.
 
+#### Per-agent depth
+
+Individual agents can override the global value with the `depth` option. It applies to that agent only, and every other agent keeps using `subagent_depth`. If `depth` is not set, the agent inherits `subagent_depth`.
+
+```json title="opencode.json"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "agent": {
+    "orchestrator": {
+      "mode": "subagent",
+      "depth": 2,
+      "permission": {
+        "task": "allow"
+      }
+    }
+  }
+}
+```
+
+The same agent written as Markdown in `.opencode/agents/orchestrator.md`:
+
+```markdown title=".opencode/agents/orchestrator.md"
+---
+description: Breaks a large task into independent units and delegates each one
+mode: subagent
+depth: 2
+permission:
+  task: allow
+---
+
+Split the request into independent units, then launch a subagent for each one and report a combined summary when they all finish.
+```
+
+Depth alone does not grant the ability to spawn. The agent also needs its [`task` permission](/docs/agents#task-permissions) set to `allow`, and a deeper target must itself allow launching subagents.
+
+Set `depth: 0` to hard-disable spawning for a single agent, even when the global `subagent_depth` allows nesting elsewhere.
+
+```json title="opencode.json"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "subagent_depth": 3,
+  "agent": {
+    "explore": {
+      "depth": 0
+    }
+  }
+}
+```
+
+:::note
+An agent can never launch another instance of itself, regardless of its `depth`. Delegate to a different agent instead — a self-delegating agent just spawns copies of itself forever without making progress.
+:::
+
 ---
 
 ### Sharing

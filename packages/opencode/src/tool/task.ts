@@ -102,16 +102,31 @@ export const TaskTool = Tool.define(
       }
 
       const parent = yield* sessions.get(ctx.sessionID)
+      // Structural rail against runaway A -> A -> A loops, not a permission, so it applies to
+      // every caller including `bypassAgentCheck` mention/slash-command invocations.
+      if (params.subagent_type === parent.agent) {
+        return yield* Effect.fail(
+          new Error(
+            `Agent "${params.subagent_type}" cannot spawn another "${params.subagent_type}" subagent. Delegate to a different agent instead.`,
+          ),
+        )
+      }
+
+      // The session's own agent is the caller on every path. `ctx.agent` is the caller for the
+      // normal task call, but `@agent` mentions pass the target instead, so prefer the session.
+      const caller = (yield* agent.get(parent.agent ?? ctx.agent)) ?? (yield* agent.get(ctx.agent))
+      const limit = caller?.depth ?? cfg.subagent_depth ?? 1
       let current = parent
       let depth = 0
-      while (current.parentID) {
+      // Only the ancestor prefix up to the limit matters, so stop walking once it is reached.
+      while (current.parentID && depth < limit) {
         depth++
         current = yield* sessions.get(current.parentID)
       }
-      if (depth >= (cfg.subagent_depth ?? 1)) {
+      if (depth >= limit) {
         return yield* Effect.fail(
           new Error(
-            `Subagent depth limit reached (${cfg.subagent_depth ?? 1}). Increase "subagent_depth" to allow nested subagents.`,
+            `Subagent depth limit reached (${limit}) for agent "${caller?.name ?? ctx.agent}". Increase "subagent_depth" or set a higher "depth" on this agent to allow nested subagents.`,
           ),
         )
       }

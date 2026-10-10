@@ -631,6 +631,32 @@ Users can always invoke any subagent directly via the `@` autocomplete menu, eve
 
 ---
 
+### Depth
+
+Control how many levels of subagent nesting this agent may launch with the `depth` option. It overrides the global [`subagent_depth`](/docs/config#subagent-depth) for this agent only; leave it unset to inherit the global value.
+
+```json title="opencode.json"
+{
+  "agent": {
+    "orchestrator": {
+      "mode": "subagent",
+      "depth": 2,
+      "permission": {
+        "task": "allow"
+      }
+    }
+  }
+}
+```
+
+Set `depth: 0` to stop this agent from launching any subagents, even when the global `subagent_depth` allows nesting. Higher values let it spawn from progressively deeper points in the session tree, so use the smallest value that works.
+
+:::note
+An agent can never launch another instance of itself. Delegate to a different agent instead.
+:::
+
+---
+
 ### Color
 
 Customize the agent's visual appearance in the UI with the `color` option. This affects how the agent appears in the interface.
