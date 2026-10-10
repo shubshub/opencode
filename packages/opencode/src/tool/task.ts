@@ -102,15 +102,6 @@ export const TaskTool = Tool.define(
       }
 
       const parent = yield* sessions.get(ctx.sessionID)
-      // Structural rail against runaway A -> A -> A loops, not a permission, so it applies to
-      // every caller including `bypassAgentCheck` mention/slash-command invocations.
-      if (params.subagent_type === parent.agent) {
-        return yield* Effect.fail(
-          new Error(
-            `Agent "${params.subagent_type}" cannot spawn another "${params.subagent_type}" subagent. Delegate to a different agent instead.`,
-          ),
-        )
-      }
 
       // The session's own agent is the caller on every path. `ctx.agent` is the caller for the
       // normal task call, but `@agent` mentions pass the target instead, so prefer the session.

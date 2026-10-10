@@ -11,6 +11,7 @@ import { Config } from "@/config/config"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { Ripgrep } from "@opencode-ai/core/ripgrep"
 import { Session } from "@/session/session"
+import { Permission } from "../../src/permission"
 import type { SessionPrompt } from "../../src/session/prompt"
 import { MessageID, PartID, SessionID } from "../../src/session/schema"
 import { SessionRunState } from "@/session/run-state"
@@ -524,44 +525,35 @@ describe("tool.task", () => {
     }),
   )
 
-  it.instance("prevents subagents from launching subagents by default", () =>
+  it.instance("does not strip the task tool from a general subagent session", () =>
     Effect.gen(function* () {
       const sessions = yield* Session.Service
       const { chat, assistant } = yield* seed()
-      const child = yield* sessions.create({ parentID: chat.id, title: "child" })
-      const nestedAssistant = yield* sessions.updateMessage({
-        ...assistant,
-        id: MessageID.ascending(),
-        parentID: MessageID.ascending(),
-        sessionID: child.id,
-      })
       const tool = yield* TaskTool
       const def = yield* tool.init()
-      let asked = false
 
-      const exit = yield* def
-        .execute(
-          {
-            description: "inspect bug",
-            prompt: "look into the cache key path",
-            subagent_type: "general",
-          },
-          {
-            sessionID: child.id,
-            messageID: nestedAssistant.id,
-            agent: "general",
-            abort: new AbortController().signal,
-            extra: { promptOps: stubOps() },
-            messages: [],
-            metadata: () => Effect.void,
-            ask: () => Effect.sync(() => (asked = true)),
-          },
-        )
-        .pipe(Effect.exit)
+      const result = yield* def.execute(
+        {
+          description: "inspect bug",
+          prompt: "look into the cache key path",
+          subagent_type: "general",
+        },
+        {
+          sessionID: chat.id,
+          messageID: assistant.id,
+          agent: "build",
+          abort: new AbortController().signal,
+          extra: { promptOps: stubOps() },
+          messages: [],
+          metadata: () => Effect.void,
+          ask: () => Effect.void,
+        },
+      )
 
-      expect(Exit.isFailure(exit)).toBe(true)
-      expect(asked).toBe(false)
-      expect(yield* sessions.children(child.id)).toHaveLength(0)
+      const child = yield* sessions.get(result.metadata.sessionId)
+      const rules = child.permission ?? []
+      expect(rules.some((rule) => rule.permission === "task")).toBe(false)
+      expect(Permission.disabled(["task"], rules).has("task")).toBe(false)
     }),
   )
 
@@ -604,11 +596,44 @@ describe("tool.task", () => {
     { config: { subagent_depth: 2 } },
   )
 
-  it.instance("blocks an agent from spawning itself before asking for permission", () =>
+  it.instance("lets a general subagent spawn a nested general subagent by default", () =>
     Effect.gen(function* () {
       const sessions = yield* Session.Service
-      const chat = yield* sessions.create({ title: "Self", agent: "general" })
-      const assistant = yield* assistantFor({ sessionID: chat.id, agent: "general" })
+      const root = yield* sessions.create({ title: "Root" })
+      const lead = yield* sessions.create({ parentID: root.id, title: "Lead", agent: "general" })
+      const assistant = yield* assistantFor({ sessionID: lead.id, agent: "general" })
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+
+      const result = yield* def.execute(
+        {
+          description: "derive pi",
+          prompt: "use Machin's formula",
+          subagent_type: "general",
+        },
+        {
+          sessionID: lead.id,
+          messageID: assistant.id,
+          agent: "general",
+          abort: new AbortController().signal,
+          extra: { promptOps: stubOps() },
+          messages: [],
+          metadata: () => Effect.void,
+          ask: () => Effect.void,
+        },
+      )
+
+      expect((yield* sessions.get(result.metadata.sessionId)).parentID).toBe(lead.id)
+    }),
+  )
+
+  it.instance("stops a general subagent from nesting past its built-in depth", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const root = yield* sessions.create({ title: "Root" })
+      const lead = yield* sessions.create({ parentID: root.id, title: "Lead", agent: "general" })
+      const worker = yield* sessions.create({ parentID: lead.id, title: "Worker", agent: "general" })
+      const assistant = yield* assistantFor({ sessionID: worker.id, agent: "general" })
       const tool = yield* TaskTool
       const def = yield* tool.init()
       let asked = false
@@ -616,12 +641,12 @@ describe("tool.task", () => {
       const exit = yield* def
         .execute(
           {
-            description: "inspect bug",
-            prompt: "look into the cache key path",
+            description: "verify pi",
+            prompt: "check the digits",
             subagent_type: "general",
           },
           {
-            sessionID: chat.id,
+            sessionID: worker.id,
             messageID: assistant.id,
             agent: "general",
             abort: new AbortController().signal,
@@ -635,69 +660,14 @@ describe("tool.task", () => {
 
       expect(Exit.isFailure(exit)).toBe(true)
       expect(asked).toBe(false)
-      expect(yield* sessions.children(chat.id)).toHaveLength(0)
+      expect(yield* sessions.children(worker.id)).toHaveLength(0)
       if (Exit.isSuccess(exit)) throw new Error("expected task failure")
       const failure = Cause.squash(exit.cause)
-      expect(failure).toBeInstanceOf(Error)
       if (!(failure instanceof Error)) throw new Error("expected Error defect")
-      expect(failure.message).toContain('Agent "general" cannot spawn another "general" subagent')
+      expect(failure.message).toContain('Subagent depth limit reached (2) for agent "general"')
     }),
   )
 
-  it.instance(
-    "blocks self-recursion for a config agent even when task permission allows it",
-    () =>
-      Effect.gen(function* () {
-        const sessions = yield* Session.Service
-        const chat = yield* sessions.create({ title: "Orchestrator", agent: "orchestrator" })
-        const assistant = yield* assistantFor({ sessionID: chat.id, agent: "orchestrator" })
-        const tool = yield* TaskTool
-        const def = yield* tool.init()
-        let asked = false
-
-        const exit = yield* def
-          .execute(
-            {
-              description: "inspect bug",
-              prompt: "look into the cache key path",
-              subagent_type: "orchestrator",
-            },
-            {
-              sessionID: chat.id,
-              messageID: assistant.id,
-              agent: "orchestrator",
-              abort: new AbortController().signal,
-              extra: { promptOps: stubOps() },
-              messages: [],
-              metadata: () => Effect.void,
-              ask: () => Effect.sync(() => (asked = true)),
-            },
-          )
-          .pipe(Effect.exit)
-
-        expect(Exit.isFailure(exit)).toBe(true)
-        expect(asked).toBe(false)
-        expect(yield* sessions.children(chat.id)).toHaveLength(0)
-        if (Exit.isSuccess(exit)) throw new Error("expected task failure")
-        const failure = Cause.squash(exit.cause)
-        expect(failure).toBeInstanceOf(Error)
-        if (!(failure instanceof Error)) throw new Error("expected Error defect")
-        expect(failure.message).toContain('Agent "orchestrator" cannot spawn another "orchestrator" subagent')
-      }),
-    {
-      config: {
-        subagent_depth: 5,
-        agent: {
-          orchestrator: {
-            mode: "subagent",
-            permission: {
-              task: "allow",
-            },
-          },
-        },
-      },
-    },
-  )
 
   it.instance(
     "per-agent depth allows nesting past the global subagent_depth",

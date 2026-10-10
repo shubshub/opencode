@@ -591,7 +591,7 @@ permission:
 Split the request into independent units, then launch a subagent for each one and report a combined summary when they all finish.
 ```
 
-Depth alone does not grant the ability to spawn. The agent also needs its [`task` permission](/docs/agents#task-permissions) set to `allow`, and a deeper target must itself allow launching subagents.
+Depth alone does not grant the ability to spawn. The agent also needs its [`task` permission](/docs/agents#task-permissions) set to `allow`, and a deeper target must itself allow launching subagents. The built-in `general` agent already satisfies both, so it can spawn nested subagents out of the box.
 
 Set `depth: 0` to hard-disable spawning for a single agent, even when the global `subagent_depth` allows nesting elsewhere.
 
@@ -608,7 +608,7 @@ Set `depth: 0` to hard-disable spawning for a single agent, even when the global
 ```
 
 :::note
-An agent can never launch another instance of itself, regardless of its `depth`. Delegate to a different agent instead — a self-delegating agent just spawns copies of itself forever without making progress.
+The built-in `general` agent opts into nesting with `depth: 2` and the `task` permission enabled, so it can delegate one level further by default. An agent may spawn other instances of its own type — `depth` is what bounds the recursion, so there is no infinite loop, but avoid delegating work an agent can finish in a single step.
 :::
 
 ---

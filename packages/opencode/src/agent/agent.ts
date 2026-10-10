@@ -187,10 +187,12 @@ const layer = Layer.effect(
               defaults,
               Permission.fromConfig({
                 todowrite: "deny",
+                task: "allow",
               }),
               user,
             ),
             options: {},
+            depth: 2,
             mode: "subagent",
             native: true,
           },

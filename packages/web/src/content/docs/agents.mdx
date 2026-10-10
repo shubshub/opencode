@@ -652,7 +652,7 @@ Control how many levels of subagent nesting this agent may launch with the `dept
 Set `depth: 0` to stop this agent from launching any subagents, even when the global `subagent_depth` allows nesting. Higher values let it spawn from progressively deeper points in the session tree, so use the smallest value that works.
 
 :::note
-An agent can never launch another instance of itself. Delegate to a different agent instead.
+An agent may launch other instances of its own type. `depth` is what bounds that recursion, so there is no infinite loop — but prefer a specialized subagent when one fits, and avoid delegating work the agent can finish in a single step.
 :::
 
 ---
